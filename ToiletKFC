@@ -10,6 +10,7 @@ if Method == "Ninja" then
     task.spawn(function()
         loadstring(game:HttpGet("https://raw.githubusercontent.com/jet-petswarm/Farm/refs/heads/main/Farm"))()
     end)
+end
 
 task.spawn(function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/jet-petswarm/Autoskip/refs/heads/main/Autoskip"))()
