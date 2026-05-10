@@ -3,23 +3,18 @@ repeat task.wait() until game:IsLoaded()
 local Method = _G.FarmMethod or "Ninja"
 
 task.spawn(function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/maclomeismeaw-ai/Fishguy-Script/main/Auto%20Legacy"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jet-petswarm/Autolegacykfc/refs/heads/main/tplegacy"))()
 end)
 
 if Method == "Ninja" then
     task.spawn(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/maclomeismeaw-ai/Fishguy-Script/main/Auto%20farm%20%28Ninja%20Method%29"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/jet-petswarm/Farm/refs/heads/main/Farm"))()
     end)
-elseif Method == "Camera" then
-    task.spawn(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/maclomeismeaw-ai/Fishguy-Script/main/Auto%20farm%20%28Camera%20Spider%20Method%29"))()
-    end)
-end
 
 task.spawn(function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/maclomeismeaw-ai/Fishguy-Script/main/Auto%20skip"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jet-petswarm/Autoskip/refs/heads/main/Autoskip"))()
 end)
 
 task.spawn(function()
-    loadstring(game:HttpGet(""))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/jet-petswarm/autolobby/refs/heads/main/autolobby"))()
 end)
