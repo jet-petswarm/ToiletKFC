@@ -1998,39 +1998,21 @@ local cStats=Card(pMain,"Statistics")
 X.tiles=Tiles(cStats,{"Placed","Upgraded","Sold"})
 
 local cAuto=Card(pMain,"Automation")
-local s25T,s10T,s1T
-
-s25T=Toggle(cAuto,"Auto Summon x25","Summon 25 units per second",Cfg.s25,function(on)
-    set("s25",on)
-    if on then
-        if s10T and s10T.GetValue() then s10T.SetValue(false) set("s10",false) end
-        if s1T and s1T.GetValue() then s1T.SetValue(false) set("s1",false) end
-    end
-end)
-
+local s10T,s1T
 s10T=Toggle(cAuto,"Auto Summon x10","Summon 10 units per second",Cfg.s10,function(on)
     set("s10",on)
-    if on then
-        if s25T and s25T.GetValue() then s25T.SetValue(false) set("s25",false) end
-        if s1T and s1T.GetValue() then s1T.SetValue(false) set("s1",false) end
-    end
+    if on and s1T and s1T.GetValue() then s1T.SetValue(false) set("s1",false) end
 end)
-
 s1T=Toggle(cAuto,"Auto Summon x1","Summon 1 unit per second",Cfg.s1,function(on)
     set("s1",on)
-    if on then
-        if s25T and s25T.GetValue() then s25T.SetValue(false) set("s25",false) end
-        if s10T and s10T.GetValue() then s10T.SetValue(false) set("s10",false) end
-    end
+    if on and s10T and s10T.GetValue() then s10T.SetValue(false) set("s10",false) end
 end)
-
 Toggle(cAuto,"Auto Spin","Spin the wheel automatically",Cfg.spn,function(on) set("spn",on) end)
 Toggle(cAuto,"Auto Open Crate","Open the selected crate",Cfg.oc,function(on) set("oc",on) end)
 Dropdown(cAuto,"Crate",function() return {"Free","ScientistCrate","PartyCrate"} end,function() return Cfg.crate end,function(v)
     set("crate",v)
     N("Crate: "..v)
 end)
-end
 X.afToggle=Toggle(cAuto,"Auto Fish","Automatic fishing cycle",Cfg.af,function(on)
     set("af",on)
     if on then startAutoFish() else stopAutoFish() end
