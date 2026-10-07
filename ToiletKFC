@@ -2741,62 +2741,108 @@ Toggle(cUt,"Anti AFK","Prevents the idle kick",Cfg.afk,function(on)
 end)
 
 -- ============================ AUTO RECONNECT ============================
--- Rejoins the map below whenever the client is disconnected or kicked (error prompt / error message).
-local RECONNECT_PLACE_ID=99703116573266
-local arcBusy=false
-local arcConns={}
+-- Rejoins the map automatically when the client is disconnected / kicked.
+-- Detection (any of these triggers it):
+--   1) GuiService error message is non-empty      (polled - the old event had NO argument, so it never fired)
+--   2) ErrorPrompt appears anywhere in CoreGui.RobloxPromptGui
+--   3) NetworkClient child removed (connection to server dropped)
+-- After rejoin the hub is re-run through queue_on_teleport when a boot script is known:
+--   getgenv().JetHubBoot = "<lua source>"   or a file  tdmacro/boot.lua  containing your loader
+local A={
+    place=99703116573266,   -- map to rejoin (falls back to the place we were loaded in)
+    home=game.PlaceId,
+    sess=0, busy=false, conns={}, watch=0, useHome=false, failed=false,
+}
 local function arcClear()
-    for _,c in ipairs(arcConns) do pcall(function() c:Disconnect() end) end
-    arcConns={}
+    for _,c in ipairs(A.conns) do pcall(function() c:Disconnect() end) end
+    A.conns={}
+    A.watch=A.watch+1
+end
+local function arcQueueBoot()
+    local q=queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+    if type(q)~="function" then return end
+    local boot
+    pcall(function() if getgenv then boot=getgenv().JetHubBoot end end)
+    if type(boot)~="string" or boot=="" then
+        pcall(function()
+            if type(isfile)=="function" and isfile(FO.."boot.lua") then
+                boot='loadstring(readfile("'..FO..'boot.lua"))()'
+            end
+        end)
+    end
+    if type(boot)=="string" and boot~="" then pcall(q,boot) end
+end
+local function arcIsDown()
+    local msg=""
+    pcall(function() msg=game:GetService("GuiService"):GetErrorMessage() end)
+    if type(msg)=="string" and msg~="" then return true end
+    local found=false
+    pcall(function()
+        local g=game:GetService("CoreGui"):FindFirstChild("RobloxPromptGui")
+        local o=g and g:FindFirstChild("promptOverlay")
+        if o and o:FindFirstChild("ErrorPrompt") then found=true end
+    end)
+    return found
 end
 local function tryRejoin(force)
-    if St.shut or arcBusy then return end
+    if St.shut then return end
     if not force and not Cfg.arc then return end
-    arcBusy=true
+    if A.busy and not force then return end
+    A.sess=A.sess+1
+    local my=A.sess
+    A.busy=true
     pcall(function() N("Disconnected - reconnecting...","warn") end)
     task.spawn(function()
         local TPS=game:GetService("TeleportService")
-        -- optional: re-run the hub in the new server if the executor supports queue_on_teleport
-        pcall(function()
-            local q=queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-            local boot=getgenv and getgenv().JetHubBoot
-            if q and type(boot)=="string" and boot~="" then q(boot) end
-        end)
+        arcQueueBoot()
         local tries=0
-        while not St.shut and (force or Cfg.arc) and tries<60 do
+        while not St.shut and A.sess==my and (force or Cfg.arc) and tries<80 do
             tries=tries+1
-            pcall(function() TPS:Teleport(RECONNECT_PLACE_ID,PLR) end)
-            task.wait(12)
+            local pid=A.useHome and A.home or A.place
+            A.failed=false
+            local ok=pcall(function() TPS:Teleport(pid,PLR) end)
+            if not ok then A.failed=true end
+            local t0=tick()
+            while tick()-t0<10 and not St.shut and A.sess==my and not A.failed do task.wait(0.25) end
+            if A.failed then A.useHome=not A.useHome task.wait(2) end   -- teleport rejected -> try the other place id
         end
-        arcBusy=false
+        if A.sess==my then A.busy=false end
     end)
 end
 function armReconnect()
     arcClear()
     if St.shut or not Cfg.arc then return end
-    local GS=game:GetService("GuiService")
-    arcConns[#arcConns+1]=ac(GS.ErrorMessageChanged:Connect(function(msg)
-        if msg and msg~="" then tryRejoin(false) end
-    end))
+    local my=A.watch
+    -- teleport rejected by Roblox (full server, invalid id, ...) -> flip to the other place id
+    pcall(function()
+        A.conns[#A.conns+1]=ac(game:GetService("TeleportService").TeleportInitFailed:Connect(function() A.failed=true end))
+    end)
+    -- connection to the server dropped
+    pcall(function()
+        A.conns[#A.conns+1]=ac(game:GetService("NetworkClient").ChildRemoved:Connect(function() tryRejoin(false) end))
+    end)
+    -- ErrorPrompt anywhere inside the Roblox prompt gui
     task.spawn(function()
-        local ok,overlay=pcall(function()
-            local cg=game:GetService("CoreGui")
-            local gui=cg:WaitForChild("RobloxPromptGui",10)
-            return gui and gui:WaitForChild("promptOverlay",10)
-        end)
-        if not ok or not overlay or St.shut then return end
-        arcConns[#arcConns+1]=ac(overlay.ChildAdded:Connect(function(ch)
-            if ch.Name=="ErrorPrompt" then tryRejoin(false) end
+        local ok,gui=pcall(function() return game:GetService("CoreGui"):WaitForChild("RobloxPromptGui",15) end)
+        if not ok or not gui or St.shut or A.watch~=my then return end
+        A.conns[#A.conns+1]=ac(gui.DescendantAdded:Connect(function(d)
+            if d.Name=="ErrorPrompt" then tryRejoin(false) end
         end))
-        if overlay:FindFirstChild("ErrorPrompt") then tryRejoin(false) end
+    end)
+    -- polling watchdog (covers every case the events miss)
+    task.spawn(function()
+        while not St.shut and A.watch==my and Cfg.arc do
+            if not A.busy and arcIsDown() then tryRejoin(false) end
+            task.wait(1.5)
+        end
     end)
 end
 Toggle(cUt,"Auto Reconnect","Rejoin the map automatically after a disconnect or kick",Cfg.arc,function(on)
     set("arc",on)
+    if not on then A.sess=A.sess+1 A.busy=false end
     armReconnect()
 end)
 Button(cUt,"Reconnect Now","p",function()
-    arcBusy=false
     N("Reconnecting...","warn")
     tryRejoin(true)
 end)
