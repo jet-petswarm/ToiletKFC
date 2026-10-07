@@ -10,6 +10,7 @@
     - Macro tab: live step status while playing (วางตัว(...) / รอเงิน(...))
     - Auto cost correction: +1 fast retry when the learned cost is too low, fixed value written back to the macro
 ]]
+print("[JET HUB] starting...")
 local TS=game:GetService("TweenService")
 local UIS=game:GetService("UserInputService")
 local RS=game:GetService("ReplicatedStorage")
@@ -481,6 +482,152 @@ tw(f,0.3,{Position=UDim2.new(1.3,0,0,0)},Enum.EasingStyle.Quart,Enum.EasingDirec
 task.delay(0.35,function() pcall(function() wrap:Destroy() end) end)
 end)
 end
+-- ===== ERROR EXPLAINER + ENVIRONMENT SELF-TEST =====
+local DIAG={log={},seen={},pending=nil,last=0}
+do
+local function dwarn(s) pcall(function() warn("[JET HUB][วินิจฉัย] "..s) end) end
+local function dclip(s)
+local fn=setclipboard or toclipboard or writeclipboard or set_clipboard
+if not fn and getgenv then pcall(function() local e=getgenv() fn=e.setclipboard or e.toclipboard or e.writeclipboard end) end
+if type(fn)~="function" then return false end
+return pcall(fn,s)
+end
+DIAG.clip=dclip
+DIAG.warn=dwarn
+-- {pattern, short reason (shown in toast), long explanation (console)}
+local RULES={
+{"attempt to call a nil value","เรียกฟังก์ชันที่ไม่มีอยู่ (nil)","สคริปต์พยายามเรียกฟังก์ชันที่ executor/เกมไม่มี เช่น loadstring, readfile, HttpGet, queue_on_teleport หรือชื่อฟังก์ชันพิมพ์ผิด"},
+{"attempt to index nil with","อ่านค่าจาก nil","ตัวแปรเป็น nil (ยังไม่โหลด/ไม่เจอ Instance) แล้วสคริปต์พยายามเข้าถึงค่าในนั้น"},
+{"attempt to index a nil value","อ่านค่าจาก nil","ตัวแปรเป็น nil (ยังไม่โหลด/ไม่เจอ Instance) แล้วสคริปต์พยายามเข้าถึงค่าในนั้น"},
+{"attempt to perform arithmetic","คำนวณกับค่าที่ไม่ใช่ตัวเลข","นำค่า nil หรือข้อความมาบวก/ลบ/คูณ/หาร"},
+{"attempt to compare","เปรียบเทียบค่าคนละชนิด","เปรียบเทียบ nil กับตัวเลข หรือข้อความกับตัวเลข"},
+{"attempt to concatenate","ต่อข้อความกับ nil","นำค่า nil หรือ table มาต่อกับข้อความด้วย .."},
+{"is not a valid member of","หา Instance ไม่เจอ","ชื่อ Object ที่เรียกไม่มีในเกม (เกมอัปเดตเปลี่ยนชื่อ หรือยังโหลดไม่เสร็จ)"},
+{"Http requests are not enabled","HTTP ถูกปิด","เกม/executor ปิดการเรียก HTTP ใช้ HttpGet โหลดสคริปต์ไม่ได้"},
+{"HttpGet","โหลด URL ไม่สำเร็จ","ลิงก์ผิด/เน็ตหลุด หรือ executor ไม่รองรับ HttpGet"},
+{"HTTP 4","เซิร์ฟเวอร์ปฏิเสธคำขอ","ลิงก์สคริปต์ผิดหรือถูกลบ (HTTP 4xx)"},
+{"lacking capability","สิทธิ์ไม่พอ","executor ไม่มีสิทธิ์ระดับนี้ (identity ต่ำ) ลอง executor ที่ดีกว่า"},
+{"cannot resolve","ใช้ค่าที่ไม่รองรับ","executor ไม่รองรับฟังก์ชัน/ค่านั้น"},
+{"Script timeout","สคริปต์ทำงานนานเกิน","ลูปหนักเกินไปจนเกมค้าง"},
+{"loadstring","โหลดโค้ดไม่ได้","executor ไม่มี loadstring หรือโค้ดที่โหลดมีไวยากรณ์ผิด"},
+{"syntax","ไวยากรณ์ผิด","โค้ดมี syntax error (วงเล็บ/end ขาด หรือไฟล์ถูกตัด)"},
+}
+local CHECKS={
+{"loadstring","จำเป็น: โหลดสคริปต์ซ้ำหลัง rejoin"},
+{"readfile","บันทึก/โหลด macro และ config"},
+{"writefile","บันทึก macro และ config"},
+{"isfile","บันทึก/โหลด macro และ config"},
+{"listfiles","แสดงรายชื่อ macro"},
+{"hookmetamethod","บันทึก macro (Recorder)"},
+{"newcclosure","บันทึก macro (Recorder)"},
+{"getnamecallmethod","บันทึก macro (Recorder)"},
+{"queue_on_teleport","Auto Reconnect โหลดฮับต่ออัตโนมัติ"},
+{"setclipboard","ปุ่ม Copy"},
+{"firesignal","บางฟีเจอร์เสริม"},
+{"gethui","ซ่อน UI"},
+}
+local function hasFn(n)
+local v
+pcall(function() v=getfenv(0)[n] end)
+if type(v)=="function" then return true end
+if getgenv then local ok,e=pcall(getgenv) if ok and type(e)=="table" and type(e[n])=="function" then return true end end
+return false
+end
+function DIAG.env(show)
+local miss,lines={}, {}
+for _,c in ipairs(CHECKS) do
+local ok=false
+local n=c[1]
+if n=="loadstring" then ok=(type(loadstring)=="function") or hasFn(n)
+elseif n=="readfile" then ok=(type(readfile)=="function") or hasFn(n)
+elseif n=="writefile" then ok=(type(writefile)=="function") or hasFn(n)
+elseif n=="isfile" then ok=(type(isfile)=="function") or hasFn(n)
+elseif n=="listfiles" then ok=(type(listfiles)=="function") or hasFn(n)
+elseif n=="hookmetamethod" then ok=(type(hookmetamethod)=="function") or hasFn(n)
+elseif n=="newcclosure" then ok=(type(newcclosure)=="function") or hasFn(n)
+elseif n=="getnamecallmethod" then ok=(type(getnamecallmethod)=="function") or hasFn(n)
+elseif n=="queue_on_teleport" then ok=(type(queue_on_teleport)=="function") or (type(syn)=="table" and type(syn.queue_on_teleport)=="function") or hasFn(n)
+elseif n=="setclipboard" then ok=(type(setclipboard)=="function") or (type(toclipboard)=="function") or hasFn(n)
+elseif n=="firesignal" then ok=(type(firesignal)=="function") or hasFn(n)
+elseif n=="gethui" then ok=(type(gethui)=="function") or hasFn(n)
+end
+lines[#lines+1]=(ok and "  [OK]   " or "  [ขาด] ")..n.." - "..c[2]
+if not ok then miss[#miss+1]=n end
+end
+DIAG.missing=miss
+if show or #miss>0 then
+dwarn("ตรวจ executor: "..(#miss==0 and "ครบทุกฟังก์ชัน" or ("ขาด "..#miss.." อย่าง: "..table.concat(miss,", "))))
+for _,l in ipairs(lines) do pcall(print,l) end
+end
+return miss
+end
+local function explainMsg(msg)
+for _,r in ipairs(RULES) do
+if msg:find(r[1],1,true) then return r[2],r[3] end
+end
+return "เกิด error ที่ไม่รู้จัก","ดูข้อความ error ด้านบน: ชื่อไฟล์:บรรทัด: สาเหตุ"
+end
+local function classify(msg)
+local chunk,line=msg:match("^([^:%s]+):(%d+):")
+if not chunk then return "ไม่ทราบต้นทาง" end
+if msg:find("JET HUB",1,true) or msg:find("JetHub",1,true) then return "มาจาก JET HUB" end
+if chunk:match("^%a+$") and #chunk>=10 and line=="1" then
+return "มาจากสคริปต์บรรทัดเดียวชื่อสุ่ม ("..chunk..") - มักเป็น loader/autoexec/queue_on_teleport ไม่ใช่ตัวฮับหลัก"
+end
+return "มาจากสคริปต์ '"..chunk.."' บรรทัด "..line
+end
+local function onMsg(msg,mtype)
+if St.shut or Cfg.diag==false then return end
+msg=tostring(msg)
+local sc,sl=msg:match("^%s*Script '([^']*)', Line (%d+)")
+if sc then
+if DIAG.pending then
+DIAG.pending.where=sc..":"..sl
+dwarn("ตำแหน่งใน stack: Script '"..sc.."' บรรทัด "..sl)
+DIAG.pending=nil
+end
+return
+end
+if msg:find("^%s*Stack ") then return end
+if mtype~=Enum.MessageType.MessageError then return end
+if msg:find("[JET HUB][วินิจฉัย]",1,true) then return end
+local now=tick()
+if DIAG.seen[msg] and now-DIAG.seen[msg]<5 then return end
+DIAG.seen[msg]=now
+local short,long=explainMsg(msg)
+local src=classify(msg)
+local e={time=os.date("%H:%M:%S"),msg=msg,short=short,long=long,src=src}
+DIAG.log[#DIAG.log+1]=e
+if #DIAG.log>50 then table.remove(DIAG.log,1) end
+DIAG.pending=e
+dwarn("พบ error: "..msg)
+dwarn("สาเหตุ: "..short.." - "..long)
+dwarn("ต้นทาง: "..src)
+if msg:find("call a nil value",1,true) then
+local miss=DIAG.env(false)
+if #miss>0 then dwarn("หมายเหตุ: executor ของคุณไม่มี "..table.concat(miss,", ").." (อาจเป็นต้นเหตุ)") end
+end
+if now-DIAG.last>2 then
+DIAG.last=now
+pcall(N,short.." | "..src:sub(1,40),"bad","Error")
+end
+end
+function DIAG.dump()
+local t={"JET HUB error log ("..os.date("%Y-%m-%d %H:%M:%S")..")"}
+for _,e in ipairs(DIAG.log) do t[#t+1]=e.time.."  "..e.msg.."\n   -> "..e.short.." | "..e.src..(e.where and (" | "..e.where) or "") end
+if #DIAG.log==0 then t[#t+1]="(no errors captured)" end
+t[#t+1]="Missing functions: "..table.concat(DIAG.missing or {},", ")
+return table.concat(t,"\n")
+end
+pcall(function()
+local LS=game:GetService("LogService")
+ac(LS.MessageOut:Connect(function(m,t) pcall(onMsg,m,t) end))
+-- replay errors that were already printed before the hub finished loading
+for _,h in ipairs(LS:GetLogHistory()) do pcall(onMsg,h.message,h.messageType) end
+end)
+DIAG.env(false)
+end
+-- ===== END EXPLAINER =====
 local BASE_W,BASE_H=540,344
 local holder=mk("Frame",{Name="Holder",Size=UDim2.fromOffset(BASE_W,BASE_H),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),BackgroundTransparency=1},sg)
 local win=mk("CanvasGroup",{Size=UDim2.fromScale(1,1),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),BackgroundColor3=K.bg,BorderSizePixel=0,GroupTransparency=1},holder)
@@ -2647,7 +2794,7 @@ if type(q)~="function" then return end
 local boot
 local src
 -- guarded head: finds loadstring in any env; if none exists, warn and do nothing (no more "attempt to call a nil value")
-local BOOT_HEAD='local _ge=getgenv and getgenv() or {} local _ls=loadstring or load or _ge.loadstring or _ge.load if type(_ls)~="function" then warn("[JET HUB] loadstring unavailable after teleport - run the script manually") else '
+local BOOT_HEAD='print("[JET HUB boot] running after teleport") local _ge=getgenv and getgenv() or {} local _ls=loadstring or load or _ge.loadstring or _ge.load if type(_ls)~="function" then warn("[JET HUB] loadstring unavailable after teleport - run the script manually") else '
 pcall(function() if getgenv then src=getgenv().JetHubBoot end end)
 if type(src)=="string" and src~="" then
 boot=BOOT_HEAD..'local _f,_e=_ls('..string.format("%q",src)..') if _f then local _ok,_er=pcall(_f) if not _ok then warn("[JET HUB] boot run error: "..tostring(_er)) end else warn("[JET HUB] boot failed: "..tostring(_e)) end end'
@@ -2733,6 +2880,14 @@ end)
 Button(cUt,"Reconnect Now","p",function()
 N("Reconnecting...","warn")
 tryRejoin(true)
+end)
+Toggle(cUt,"Error Explainer","Explain console errors in plain language (see F9 console)",Cfg.diag~=false,function(on) set("diag",on) end)
+Button(cUt,"Run Self-Test","p",function()
+local miss=DIAG.env(true)
+if #miss==0 then N("Executor OK - all functions found","ok") else N("Missing: "..table.concat(miss,", "):sub(1,60),"warn") end
+end)
+Button(cUt,"Copy Error Log","p",function()
+if DIAG.clip(DIAG.dump()) then N("Error log copied","ok") else N("Clipboard not supported - see console","warn") DIAG.warn(DIAG.dump()) end
 end)
 Button(cUt,"Unload "..HUB_FULL,"d",askClose)
 end
