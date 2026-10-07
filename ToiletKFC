@@ -115,12 +115,16 @@ do
 end
 for k,v in pairs({
     gs="1",mn="",sel="",sk=false,rp=false,lb=false,rec=false,pl=false,
-    s10=false,s1=false,spn=false,afk=false,oc=false,af=false,cm=true,
+    s10=false,s1=false,s25=false,spn=false,afk=true,arc=true,oc=false,af=false,cm=true,
     nw=true,lang="en",qmap="City",qauto=false,vmode="Easy",vauto=false,
     crate="Free",acr=155,acg=120,acb=255,csrc="",uis=1,fpos=false
 }) do
     if Cfg[k]==nil then Cfg[k]=v end
 end
+-- language: force English once (older builds could leave "th" saved), user choice is respected afterwards
+if Cfg.langv~=2 then Cfg.lang="en" Cfg.langv=2 end
+-- Anti AFK + Auto Reconnect are ON by default (forced on once for older configs)
+if Cfg.defv~=1 then Cfg.afk=true Cfg.arc=true Cfg.defv=1 end
 local _init=true
 local _pend=false
 local function save()
@@ -265,6 +269,7 @@ do
         {"Placed","วางแล้ว"},{"Upgraded","อัปเกรดแล้ว"},{"Sold","ขายแล้ว"},
         {"Auto Summon x10","ออโต้ summon x10"},{"Summon 10 units per second","summon 10 ตัวต่อวินาที"},
         {"Auto Summon x1","ออโต้ summon x1"},{"Summon 1 unit per second","summon 1 ตัวต่อวินาที"},
+        {"Auto Summon x25","ออโต้ summon x25"},{"Summon 25 units every 0.5 seconds","summon 25 ตัวทุก 0.5 วินาที"},
         {"Auto Spin","ออโต้หมุนวงล้อ"},{"Spin the wheel automatically","หมุนวงล้ออัตโนมัติ"},
         {"Auto Open Crate","ออโต้เปิดลัง"},{"Open the selected crate","เปิดลังที่เลือก"},{"Crate","ลัง"},
         {"Auto Fish","ออโต้ตกปลา"},{"Automatic fishing cycle","ตกปลาอัตโนมัติ"},
@@ -299,7 +304,7 @@ do
         {"Select a language, then press Change Language to apply it instantly.","เลือกภาษา แล้วกดปุ่มเปลี่ยนภาษา ระบบจะเปลี่ยนให้ทันที"},
         {"Select language","เลือกภาษา"},{"Change Language","เปลี่ยนภาษา"},{"Language changed","เปลี่ยนภาษาแล้ว"},
         {"Select...","เลือก..."},{"Nothing to select","ไม่มีให้เลือก"},
-        {"Idle","ว่าง"},{"Recording","กำลังบันทึก"},{"Playing","กำลังเล่น"},{"Ready","พร้อม"},
+        {"Idle","ว่าง"},{"Auto Reconnect","ออโต้เชื่อมต่อใหม่"},{"Rejoin the map automatically after a disconnect or kick","เข้าแมพใหม่อัตโนมัติเมื่อหลุดหรือโดนเตะ"},{"Reconnect Now","เชื่อมต่อใหม่ทันที"},{"Disconnected - reconnecting...","หลุดการเชื่อมต่อ - กำลังเชื่อมต่อใหม่..."},{"Reconnecting...","กำลังเชื่อมต่อใหม่..."},{"Sold OK","ขายแล้ว"},{"Recording","กำลังบันทึก"},{"Playing","กำลังเล่น"},{"Ready","พร้อม"},
         {"Starting...","กำลังเริ่ม..."},{"Measuring exact costs...","กำลังวัดราคาจริง..."},
         {"Capturing actions + exact costs","กำลังบันทึกการกระทำ + ราคาจริง"},{"Running macro","กำลังรันมาโคร"},
         {"Waiting for the round to start...","รอรอบเริ่ม..."},{"Waiting for round","รอรอบเริ่ม"},
@@ -342,6 +347,7 @@ do
         {"(approximate)","(ประมาณ)"},{" ~approx"," ~ประมาณ"},{" exact"," แน่นอน"},{"cash NOT found","ไม่พบเงิน"},
         {"  |  cash ","  |  เงิน "},{"costs unknown, will be learned","ไม่ทราบราคา จะเรียนรู้เอง"},
         {"every cost captured","จับราคาครบทุกขั้น"},{"not detected","ยังไม่พบ"},{"(step ","(ขั้นที่ "},
+        {"Place(","วางตัว("},{"Upgrade(","อัพเกรด("},{"Sell(","ขายตัว("},{"Skip wave()","ข้ามเวฟ()"},{"Speed(","ปรับสปีด("},
     }
     local RULES={
         {"^Place (%d+)  |  Upgrade (%d+)  |  Sell (%d+)$","^วาง (%d+)  |  อัปเกรด (%d+)  |  ขาย (%d+)$","Place %s  |  Upgrade %s  |  Sell %s","วาง %s  |  อัปเกรด %s  |  ขาย %s"},
@@ -353,6 +359,8 @@ do
         {"^Trying price (.-) %.%.%.$","^ลองซื้อที่ราคา (.-) %.%.%.$","Trying price %s ...","ลองซื้อที่ราคา %s ..."},
         {"^Round (%d+) | (.*)$","^รอบ (%d+) | (.*)$","Round %s | %s","รอบ %s | %s"},
         {"^Next  (.*)$","^ถัดไป  (.*)$","Next  %s","ถัดไป  %s"},
+        {"^Fixed macro cost at step (%d+): (.-) %->  ?(.-)$","^แก้ราคาในมาโคร ขั้น (%d+): (.-) →  ?(.-)$","Fixed macro cost at step %s: %s -> %s","แก้ราคาในมาโคร ขั้น %s: %s → %s"},
+        {"^(%d+): (.*)$","^(%d+): (.*)$","%s: %s","%s: %s"},
     }
     local TH,EN={},{}
     for _,p in ipairs(PAIRS) do
@@ -391,34 +399,76 @@ do
         return subs(s,from,to)
     end
 end
+-- Event driven: every label is translated the moment its Text changes (same frame),
+-- so the script's own English text never shows up between two polling ticks.
+function L.sync(d,e)
+    if e.busy or St.shut then return end
+    local cur=d.Text
+    if cur==e.t then return end          -- this is our own translated text
+    e.o=cur                               -- the script wrote new text -> new original
+    local nt=L.tr(cur,true)
+    e.t=nt
+    if nt~=cur then
+        e.busy=true
+        pcall(function() d.Text=nt end)
+        e.busy=false
+    end
+end
+function L.hook(d)
+    if L.reg[d] then return L.reg[d] end
+    if not (d:IsA("TextLabel") or d:IsA("TextButton")) then return nil end
+    local e={o=d.Text,t=d.Text,busy=false}
+    L.reg[d]=e
+    local cur=d.Text
+    if cur~="" then
+        local nt=L.tr(cur,true)
+        e.t=nt
+        if nt~=cur then
+            e.busy=true
+            pcall(function() d.Text=nt end)
+            e.busy=false
+        end
+    end
+    d:GetPropertyChangedSignal("Text"):Connect(function() L.sync(d,e) end)
+    return e
+end
 function L.apply()
     if St.shut then return end
     for _,d in ipairs(sg:GetDescendants()) do
         if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local cur=d.Text
-            if cur~="" then
-                local e=L.reg[d]
-                if not e then
-                    e={o=cur,t=cur}
-                    L.reg[d]=e
-                elseif cur~=e.t then
-                    e.o=cur -- text was changed by the script itself -> new original
-                end
-                local nt=L.tr(e.o,true)
-                if nt~=cur then d.Text=nt end
-                e.t=nt
-            end
+            local e=L.reg[d]
+            if e then L.sync(d,e) else L.hook(d) end
         end
     end
 end
 function L.set(lang)
     L.lang=(lang=="th") and "th" or "en"
-    L.apply()
+    if St.shut then return end
+    for _,d in ipairs(sg:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+            local e=L.reg[d] or L.hook(d)
+            if e then
+                local cur=d.Text
+                if cur~=e.t then e.o=cur end
+                local nt=L.tr(e.o,true)
+                e.t=nt
+                if nt~=cur then
+                    e.busy=true
+                    pcall(function() d.Text=nt end)
+                    e.busy=false
+                end
+            end
+        end
+    end
 end
+ac(sg.DescendantAdded:Connect(function(d)
+    if St.shut then return end
+    if d:IsA("TextLabel") or d:IsA("TextButton") then task.defer(L.hook,d) end
+end))
 task.spawn(function()
     while not St.shut do
-        pcall(L.apply)
-        task.wait(0.25)
+        pcall(L.apply)       -- safety net only
+        task.wait(0.5)
     end
 end)
 
@@ -843,7 +893,7 @@ function X.setStep(head,label,nextLabel)
         X.stH.Text=head or ""
         X.stA.Text=label or "-"
         X.stB.Text="-"
-        X.stC.Text=nextLabel and ("ถัดไป  "..nextLabel) or ""
+        X.stC.Text=nextLabel and ("Next  "..nextLabel) or ""
     end)
 end
 function X.setPhase(txt)
@@ -1524,7 +1574,7 @@ local function startPlayback()
     local my=St.psess
     St.playing=true
     X.setStatus("Playing","Starting...")
-    X.setStep("เริ่มมาโคร","กำลังเตรียม...",nil)
+    X.setStep("Starting macro","Preparing...",nil)
     task.spawn(function()
         local function alive() return St.playing and St.psess==my and not St.shut end
         local roundDetail=nil
@@ -1535,7 +1585,7 @@ local function startPlayback()
             if now-lastUI<0.1 then return end
             lastUI=now
             shownWait=true
-            local msg=string.format("รอเงิน $%s  (มี $%s  ขาดอีก $%s)",JH.full(need),JH.full(c),JH.full(math.max(0,need-c)))
+            local msg=string.format("Waiting for cash $%s  (have $%s  short $%s)",JH.full(need),JH.full(c),JH.full(math.max(0,need-c)))
             X.setPhase(msg)
             X.setDetail(msg)
         end
@@ -1557,11 +1607,11 @@ local function startPlayback()
         -- ---------- labels / status ----------
         local function actLabel(a,names)
             if not a then return "" end
-            if a.t=="P" then return "วางตัว("..tostring(a.n)..")"
-            elseif a.t=="U" then return "อัพเกรด("..tostring(names[a.i] or ("#"..tostring(a.i)))..")"
-            elseif a.t=="S" then return "ขายตัว("..tostring(names[a.i] or ("#"..tostring(a.i)))..")"
-            elseif a.t=="W" then return "ข้ามเวฟ()"
-            else return "ปรับสปีด("..tostring(a.v)..")" end
+            if a.t=="P" then return "Place("..tostring(a.n)..")"
+            elseif a.t=="U" then return "Upgrade("..tostring(names[a.i] or ("#"..tostring(a.i)))..")"
+            elseif a.t=="S" then return "Sell("..tostring(names[a.i] or ("#"..tostring(a.i)))..")"
+            elseif a.t=="W" then return "Skip wave()"
+            else return "Speed("..tostring(a.v)..")" end
         end
 
         -- ---------- cost correction ----------
@@ -1579,7 +1629,7 @@ local function startPlayback()
             a.c=real
             JH.learned[Cfg.sel..":"..idx]=real
             wj(FO..Cfg.sel..".json",ctx.data)
-            N(string.format("แก้ราคาในมาโคร ขั้น %d: %s → %s",idx,old and JH.full(old) or "?",JH.full(real)),"ok")
+            N(string.format("Fixed macro cost at step %d: %s -> %s",idx,old and JH.full(old) or "?",JH.full(real)),"ok")
         end
         local function afterBuy(ctx,idx,a,sp,need,corrected)
             if JH.approx then return end   -- GUI text source is only approximate
@@ -1604,7 +1654,7 @@ local function startPlayback()
                     if not okw then return end
                 end
                 tries=tries+1
-                X.setPhase(corrected and string.format("ลองซื้อที่ราคา %s ...",JH.full(need)) or ("กำลังวางตัว("..tostring(a.n)..")"))
+                X.setPhase(corrected and string.format("Trying price %s ...",JH.full(need)) or ("Placing("..tostring(a.n)..")"))
                 local c0,t0=JH.cash(),tick()
                 local snap=snapTowers()
                 local okc,res=pcall(function() return PL:InvokeServer(a.n,cf) end)
@@ -1622,7 +1672,7 @@ local function startPlayback()
                     ctx.k[inst]=a.i
                     placed=true
                     C.P=C.P+1 X.rfC()
-                    X.setPhase("วางสำเร็จ")
+                    X.setPhase("Placed OK")
                     if useCash then
                         local sp=JH.confirm(key,c0,t0,need)
                         afterBuy(ctx,idx,a,sp,need,corrected)
@@ -1657,7 +1707,7 @@ local function startPlayback()
             local inst=ctx.t[a.i]
             if not inst or not inst.Parent then
                 warn("[JET HUB] upgrade skipped, tower #"..tostring(a.i).." is missing (step "..idx..")")
-                X.setPhase("ข้าม - ไม่พบตัวที่ต้องอัพเกรด")
+                X.setPhase("Skipped - no unit to upgrade")
                 return
             end
             local key=Cfg.sel..":"..idx
@@ -1672,7 +1722,7 @@ local function startPlayback()
                     if not okw then return end
                 end
                 tries=tries+1
-                X.setPhase(corrected and string.format("ลองซื้อที่ราคา %s ...",JH.full(need)) or ("กำลังอัพเกรด(#"..tostring(a.i)..")"))
+                X.setPhase(corrected and string.format("Trying price %s ...",JH.full(need)) or ("Upgrading(#"..tostring(a.i)..")"))
                 local c0,t0=JH.cash(),tick()
                 local okc,res=pcall(function() return UP:InvokeServer(inst) end)
                 if okc and res~=false then
@@ -1684,7 +1734,7 @@ local function startPlayback()
                 end
                 if done then
                     C.U=C.U+1 X.rfC()
-                    X.setPhase("อัพเกรดสำเร็จ")
+                    X.setPhase("Upgraded OK")
                     if useCash then
                         local sp=JH.confirm(key,c0,t0,need)
                         afterBuy(ctx,idx,a,sp,need,corrected)
@@ -1709,7 +1759,7 @@ local function startPlayback()
 
         local function doAction(a,idx,ctx,useCash,runOk)
             local total=#ctx.data
-            X.setStep(string.format("ขั้นที่ %d / %d",idx,total),idx..": "..actLabel(a,ctx.names),
+            X.setStep(string.format("Step %d / %d",idx,total),idx..": "..actLabel(a,ctx.names),
                 ctx.data[idx+1] and ((idx+1)..": "..actLabel(ctx.data[idx+1],ctx.names)) or nil)
             -- wait for the wave this action was recorded in
             if useCash and Cfg.nw~=false then
@@ -1718,11 +1768,11 @@ local function startPlayback()
                 while runOk() do
                     local cw=JH.wave()
                     if not cw or cw>=a.w then break end
-                    X.setPhase(string.format("รอเวฟ(%d)  ตอนนี้เวฟ %d",a.w,cw))
+                    X.setPhase(string.format("Waiting wave(%d)  now wave %d",a.w,cw))
                     task.wait(0.1)
                 end
             elseif (a.d or 0)>0 then
-                X.setPhase(string.format("รอเวลา(%.1fs)",a.d))
+                X.setPhase(string.format("Waiting(%.1fs)",a.d))
                 local t0=tick()
                 while tick()-t0<a.d and runOk() do task.wait(0.05) end
             end
@@ -1732,7 +1782,7 @@ local function startPlayback()
             elseif a.t=="U" then
                 doUpgrade(a,idx,ctx,useCash,runOk)
             elseif a.t=="S" then
-                X.setPhase("กำลังขาย...")
+                X.setPhase("Selling...")
                 local SE=ens("s","RemoteFunctions","SellTower")
                 local inst=ctx.t[a.i]
                 if SE and inst and inst.Parent then
@@ -1741,15 +1791,15 @@ local function startPlayback()
                     ctx.t[a.i]=nil
                     ctx.k[inst]=nil
                 end
-                X.setPhase("ขายแล้ว")
+                X.setPhase("Sold OK")
             elseif a.t=="W" then
                 local SK=ens("w","RemoteEvents","SkipWaveVote")
                 if SK then pcall(function() SK:FireServer(a.v or 1) end) end
-                X.setPhase("ข้ามเวฟแล้ว")
+                X.setPhase("Wave skipped")
             elseif a.t=="G" then
                 local SP=ens("g","RemoteEvents","SetGameSpeed")
                 if SP then pcall(function() SP:FireServer(a.v) end) end
-                X.setPhase("ปรับสปีดแล้ว")
+                X.setPhase("Speed set")
             end
         end
 
@@ -1762,7 +1812,7 @@ local function startPlayback()
             end
             if not roundActive() then
                 X.setStatus("Playing","Waiting for the round to start...")
-                X.setStep("รอรอบเริ่ม","รอรอบเริ่ม...",nil)
+                X.setStep("Waiting for round","Waiting for the round to start...",nil)
                 local t0=tick()
                 while alive() and not roundActive() and tick()-t0<600 do task.wait(0.4) end
                 if not alive() then break end
@@ -1792,7 +1842,7 @@ local function startPlayback()
             end
             if not alive() then break end
             X.setStatus("Playing","Macro finished - waiting for next round")
-            X.setPhase("จบมาโคร - รอรอบถัดไป")
+            X.setPhase("Macro finished - waiting for next round")
             waitNextRound()
         end
         if St.psess==my then
@@ -1820,6 +1870,11 @@ end)
 task.spawn(function()
     while not St.shut do
         if Cfg.s1 then invokeSummon(1) task.wait(1) else task.wait(0.5) end
+    end
+end)
+task.spawn(function()
+    while not St.shut do
+        if Cfg.s25 then invokeSummon(25) task.wait(0.5) else task.wait(0.5) end
     end
 end)
 task.spawn(function()
@@ -1998,14 +2053,26 @@ local cStats=Card(pMain,"Statistics")
 X.tiles=Tiles(cStats,{"Placed","Upgraded","Sold"})
 
 local cAuto=Card(pMain,"Automation")
-local s10T,s1T
-s10T=Toggle(cAuto,"Auto Summon x10","Summon 10 units per second",Cfg.s10,function(on)
+local sumT={}
+local function sumOff(except)
+    for _,k in ipairs({"s1","s10","s25"}) do
+        if k~=except and sumT[k] and sumT[k].GetValue() then
+            sumT[k].SetValue(false)
+            set(k,false)
+        end
+    end
+end
+sumT.s10=Toggle(cAuto,"Auto Summon x10","Summon 10 units per second",Cfg.s10,function(on)
     set("s10",on)
-    if on and s1T and s1T.GetValue() then s1T.SetValue(false) set("s1",false) end
+    if on then sumOff("s10") end
 end)
-s1T=Toggle(cAuto,"Auto Summon x1","Summon 1 unit per second",Cfg.s1,function(on)
+sumT.s1=Toggle(cAuto,"Auto Summon x1","Summon 1 unit per second",Cfg.s1,function(on)
     set("s1",on)
-    if on and s10T and s10T.GetValue() then s10T.SetValue(false) set("s10",false) end
+    if on then sumOff("s1") end
+end)
+sumT.s25=Toggle(cAuto,"Auto Summon x25","Summon 25 units every 0.5 seconds",Cfg.s25,function(on)
+    set("s25",on)
+    if on then sumOff("s25") end
 end)
 Toggle(cAuto,"Auto Spin","Spin the wheel automatically",Cfg.spn,function(on) set("spn",on) end)
 Toggle(cAuto,"Auto Open Crate","Open the selected crate",Cfg.oc,function(on) set("oc",on) end)
@@ -2022,15 +2089,15 @@ local cFish=Card(pMain,"Fishing Spot")
 local function fpText()
     local p=Cfg.fpos
     if type(p)=="table" and tonumber(p[1]) and tonumber(p[2]) and tonumber(p[3]) then
-        return string.format("ตำแหน่งที่บันทึก: %.1f, %.1f, %.1f",p[1],p[2],p[3])
+        return string.format("Saved spot: %.1f, %.1f, %.1f",p[1],p[2],p[3])
     end
-    return "ยังไม่ได้เลือกตำแหน่ง - Auto Fish จะโยนเบ็ดหน้าตัวละครแทน"
+    return "No spot picked - Auto Fish will cast in front of the character"
 end
 X.fpLbl=Note(cFish,fpText(),K.sb)
-Note(cFish,"กดปุ่มเลือก แล้วไปตกปลาในเกมตรงจุดที่ต้องการ 1 ครั้ง สคริปจะบันทึกตำแหน่งนั้นให้เอง")
+Note(cFish,"Press the pick button, then cast once in-game at the spot you want. The script saves it for you.")
 function X.stopPick()
     St.pick=false
-    pcall(function() if X.pickBtn then X.pickBtn.Text="เลือกตำแหน่งตกปลา" end end)
+    pcall(function() if X.pickBtn then X.pickBtn.Text="Pick fishing spot" end end)
 end
 function X.onCastPicked(p)
     St.pick=false
@@ -2038,15 +2105,15 @@ function X.onCastPicked(p)
     set("fpos",Cfg.fpos)
     pcall(function()
         X.fpLbl.Text=fpText()
-        X.pickBtn.Text="เลือกตำแหน่งตกปลา"
+        X.pickBtn.Text="Pick fishing spot"
     end)
-    N("บันทึกตำแหน่งตกปลาแล้ว","ok")
+    N("Fishing spot saved","ok")
 end
-X.pickBtn=Button(cFish,"เลือกตำแหน่งตกปลา","p",function(b)
-    if St.pick then X.stopPick() N("ยกเลิกการเลือกตำแหน่ง","warn") return end
+X.pickBtn=Button(cFish,"Pick fishing spot","p",function(b)
+    if St.pick then X.stopPick() N("Selection cancelled","warn") return end
     St.pick=true
-    b.Text="ยกเลิก (รอคุณตกปลาในเกม...)"
-    N("ไปกดตกปลาในเกมตรงจุดที่ต้องการ แล้วสคริปจะบันทึกให้","ok")
+    b.Text="Cancel (waiting for you to fish in-game...)"
+    N("Go cast in-game at the spot you want and the script will save it","ok")
     if not HOOK_OK then
         -- no hook API: use the next world click as the cast spot
         local conn
@@ -2063,10 +2130,10 @@ X.pickBtn=Button(cFish,"เลือกตำแหน่งตกปลา","p"
         ac(conn)
     end
 end)
-Button(cFish,"ล้างตำแหน่งที่บันทึก","d",function()
+Button(cFish,"Clear saved spot","d",function()
     set("fpos",false)
     pcall(function() X.fpLbl.Text=fpText() end)
-    N("ล้างตำแหน่งตกปลาแล้ว","warn")
+    N("Fishing spot cleared","warn")
 end)
 
 local cTp=Card(pMain,"Teleport")
@@ -2476,6 +2543,67 @@ Toggle(cUt,"Anti AFK","Prevents the idle kick",Cfg.afk,function(on)
     set("afk",on)
     applyAFK(on)
 end)
+
+-- ============================ AUTO RECONNECT ============================
+-- Rejoins the map below whenever the client is disconnected or kicked (error prompt / error message).
+local RECONNECT_PLACE_ID=99703116573266
+local arcBusy=false
+local arcConns={}
+local function arcClear()
+    for _,c in ipairs(arcConns) do pcall(function() c:Disconnect() end) end
+    arcConns={}
+end
+local function tryRejoin(force)
+    if St.shut or arcBusy then return end
+    if not force and not Cfg.arc then return end
+    arcBusy=true
+    pcall(function() N("Disconnected - reconnecting...","warn") end)
+    task.spawn(function()
+        local TPS=game:GetService("TeleportService")
+        -- optional: re-run the hub in the new server if the executor supports queue_on_teleport
+        pcall(function()
+            local q=queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+            local boot=getgenv and getgenv().JetHubBoot
+            if q and type(boot)=="string" and boot~="" then q(boot) end
+        end)
+        local tries=0
+        while not St.shut and (force or Cfg.arc) and tries<60 do
+            tries=tries+1
+            pcall(function() TPS:Teleport(RECONNECT_PLACE_ID,PLR) end)
+            task.wait(12)
+        end
+        arcBusy=false
+    end)
+end
+function armReconnect()
+    arcClear()
+    if St.shut or not Cfg.arc then return end
+    local GS=game:GetService("GuiService")
+    arcConns[#arcConns+1]=ac(GS.ErrorMessageChanged:Connect(function(msg)
+        if msg and msg~="" then tryRejoin(false) end
+    end))
+    task.spawn(function()
+        local ok,overlay=pcall(function()
+            local cg=game:GetService("CoreGui")
+            local gui=cg:WaitForChild("RobloxPromptGui",10)
+            return gui and gui:WaitForChild("promptOverlay",10)
+        end)
+        if not ok or not overlay or St.shut then return end
+        arcConns[#arcConns+1]=ac(overlay.ChildAdded:Connect(function(ch)
+            if ch.Name=="ErrorPrompt" then tryRejoin(false) end
+        end))
+        if overlay:FindFirstChild("ErrorPrompt") then tryRejoin(false) end
+    end)
+end
+Toggle(cUt,"Auto Reconnect","Rejoin the map automatically after a disconnect or kick",Cfg.arc,function(on)
+    set("arc",on)
+    armReconnect()
+end)
+Button(cUt,"Reconnect Now","p",function()
+    arcBusy=false
+    N("Reconnecting...","warn")
+    tryRejoin(true)
+end)
 Button(cUt,"Unload "..HUB_FULL,"d",askClose)
 
 end
@@ -2518,6 +2646,7 @@ task.spawn(function()
     if Cfg.rp then startRP() end
     if Cfg.lb then startLB() end
     if Cfg.afk then applyAFK(true) end
+    armReconnect()
     if Cfg.qauto and X.startQ then X.startQ() end
     if Cfg.vauto and X.startV then X.startV() end
     if Cfg.af then startAutoFish() end
