@@ -117,7 +117,7 @@ for k,v in pairs({
     gs="1",mn="",sel="",sk=false,rp=false,lb=false,rec=false,pl=false,
     s10=false,s1=false,s25=false,spn=false,afk=true,arc=true,oc=false,af=false,cm=true,
     nw=true,lang="en",qmap="City",qauto=false,vmode="Easy",vauto=false,
-    crate="Free",acr=155,acg=120,acb=255,csrc="",uis=1,fpos=false
+    crate="Free",acr=155,acg=120,acb=255,csrc="",uis=1,fpos=false,dm=false
 }) do
     if Cfg[k]==nil then Cfg[k]=v end
 end
@@ -276,6 +276,8 @@ do
         {"Teleport to Fishing Spot","เทเลพอร์ตไปจุดตกปลา"},{"Fishing spot  (-6831, 26, 1044)","จุดตกปลา  (-6831, 26, 1044)"},
         {"Teleported","เทเลพอร์ตแล้ว"},{"Teleport failed","เทเลพอร์ตไม่สำเร็จ"},
         {"Speed","ความเร็ว"},
+        {"Performance","ประสิทธิภาพ"},{"Auto Delete Mobs","ลบม็อบอัตโนมัติ"},
+        {"Deletes mobs in Workspace > Mobs smoothly, so the game runs with less lag","ลบม็อบในโฟลเดอร์ Mobs ของ Workspace แบบลื่นไหล ช่วยให้เกมลื่นขึ้น แลคน้อยลง"},
         {"Auto Skip Wave","ออโต้ข้ามเวฟ"},{"Skip waves automatically","ข้ามเวฟอัตโนมัติ"},
         {"Auto Replay","ออโต้เล่นซ้ำ"},{"Vote replay when the round ends","โหวตเล่นซ้ำเมื่อจบรอบ"},
         {"Auto Lobby","ออโต้กลับล็อบบี้"},{"Return to lobby automatically","กลับล็อบบี้อัตโนมัติ"},
@@ -770,7 +772,7 @@ local function openList(anchor,opts,curv,pick)
     local ap,as=anchor.AbsolutePosition,anchor.AbsoluteSize
     local vp=sg.AbsoluteSize
     local w=math.max(as.X,160)
-    local h=math.min(#opts*30+8,200)
+    local h=math.min(#opts*30+8,260)
     local x=math.clamp(ap.X+as.X-w,6,math.max(6,vp.X-w-6))
     local y=ap.Y+as.Y+4
     if y+h>vp.Y-6 then y=math.max(6,ap.Y-h-4) end
@@ -2726,6 +2728,56 @@ Button(cLang,"Change Language","p",function()
     N("Language changed","ok")
 end)
 
+local cPerf=Card(pSet,"Performance")
+do
+    -- Auto Delete Mobs: removes everything inside Workspace > Mobs on YOUR client only (less lag / smoother game).
+    -- Smooth: new mobs are queued and destroyed a few per frame, so there are no big freezes.
+    local MD={sess=0,q={},conn=nil}
+    local function mdStop()
+        MD.sess=MD.sess+1
+        if MD.conn then pcall(function() MD.conn:Disconnect() end) MD.conn=nil end
+        MD.q={}
+    end
+    local function mdStart()
+        mdStop()
+        local my=MD.sess
+        -- worker: destroys up to 6 mobs per frame
+        task.spawn(function()
+            while not St.shut and MD.sess==my do
+                local n=0
+                while n<6 and #MD.q>0 do
+                    local m=table.remove(MD.q)
+                    if m and m.Parent then pcall(function() m:Destroy() end) end
+                    n=n+1
+                end
+                RUN.Heartbeat:Wait()
+            end
+        end)
+        -- watcher: finds the Mobs folder (re-hooks if it is recreated) and sweeps leftovers
+        task.spawn(function()
+            local hooked
+            while not St.shut and MD.sess==my and Cfg.dm do
+                local f=workspace:FindFirstChild("Mobs")
+                if f then
+                    if f~=hooked then
+                        hooked=f
+                        if MD.conn then pcall(function() MD.conn:Disconnect() end) end
+                        MD.conn=f.ChildAdded:Connect(function(c) MD.q[#MD.q+1]=c end)
+                    end
+                    for _,c in ipairs(f:GetChildren()) do MD.q[#MD.q+1]=c end
+                end
+                task.wait(1)
+            end
+        end)
+    end
+    X.startMD=mdStart
+    X.stopMD=mdStop
+    Toggle(cPerf,"Auto Delete Mobs","Deletes mobs in Workspace > Mobs smoothly, so the game runs with less lag",Cfg.dm,function(on)
+        set("dm",on)
+        if on then mdStart() else mdStop() end
+    end)
+end
+
 local cUt=Card(pSet,"Utility")
 local afkConn
 function applyAFK(on)
@@ -2766,12 +2818,20 @@ end
 local function arcQueueBoot()
     local q=queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     if type(q)~="function" then return end
+    -- Every queued chunk is wrapped: if loadstring/load fails or the source has a compile error, it only
+    -- warns instead of throwing  "attempt to call a nil value"  (LocalScript, Line 1).
     local boot
-    pcall(function() if getgenv then boot=getgenv().JetHubBoot end end)
-    if type(boot)~="string" or boot=="" then
+    local src
+    pcall(function() if getgenv then src=getgenv().JetHubBoot end end)
+    if type(src)=="string" and src~="" then
+        boot='local _ls=loadstring or load local _f,_e=_ls('..string.format("%q",src)..') if _f then _f() else warn("[JET HUB] boot failed: "..tostring(_e)) end'
+    else
         pcall(function()
             if type(isfile)=="function" and isfile(FO.."boot.lua") then
-                boot='loadstring(readfile("'..FO..'boot.lua"))()'
+                boot='local _ls=loadstring or load local _ok,_s=pcall(readfile,"'..FO..'boot.lua") '
+                    ..'if _ok and type(_s)=="string" and _s~="" then local _f,_e=_ls(_s) '
+                    ..'if _f then _f() else warn("[JET HUB] boot.lua error: "..tostring(_e)) end '
+                    ..'else warn("[JET HUB] boot.lua not readable") end'
             end
         end)
     end
@@ -2893,6 +2953,7 @@ task.spawn(function()
     if Cfg.rp then startRP() end
     if Cfg.lb then startLB() end
     if Cfg.afk then applyAFK(true) end
+    if Cfg.dm and X.startMD then X.startMD() end
     armReconnect()
     if Cfg.qauto and X.startQ then X.startQ() end
     if Cfg.vauto and X.startV then X.startV() end
