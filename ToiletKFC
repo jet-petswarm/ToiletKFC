@@ -2646,16 +2646,19 @@ local q=queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and flux
 if type(q)~="function" then return end
 local boot
 local src
+-- guarded head: finds loadstring in any env; if none exists, warn and do nothing (no more "attempt to call a nil value")
+local BOOT_HEAD='local _ge=getgenv and getgenv() or {} local _ls=loadstring or load or _ge.loadstring or _ge.load if type(_ls)~="function" then warn("[JET HUB] loadstring unavailable after teleport - run the script manually") else '
 pcall(function() if getgenv then src=getgenv().JetHubBoot end end)
 if type(src)=="string" and src~="" then
-boot='local _ls=loadstring or load local _f,_e=_ls('..string.format("%q",src)..') if _f then _f() else warn("[JET HUB] boot failed: "..tostring(_e)) end'
+boot=BOOT_HEAD..'local _f,_e=_ls('..string.format("%q",src)..') if _f then local _ok,_er=pcall(_f) if not _ok then warn("[JET HUB] boot run error: "..tostring(_er)) end else warn("[JET HUB] boot failed: "..tostring(_e)) end end'
 else
 pcall(function()
 if type(isfile)=="function" and isfile(FO.."boot.lua") then
-boot='local _ls=loadstring or load local _ok,_s=pcall(readfile,"'..FO..'boot.lua") '
+boot=BOOT_HEAD..'local _rf=readfile or (getgenv and getgenv().readfile) if type(_rf)~="function" then warn("[JET HUB] readfile missing") else '
+..'local _ok,_s=pcall(_rf,"'..FO..'boot.lua") '
 ..'if _ok and type(_s)=="string" and _s~="" then local _f,_e=_ls(_s) '
-..'if _f then _f() else warn("[JET HUB] boot.lua error: "..tostring(_e)) end '
-..'else warn("[JET HUB] boot.lua not readable") end'
+..'if _f then local _ok2,_er=pcall(_f) if not _ok2 then warn("[JET HUB] boot run error: "..tostring(_er)) end else warn("[JET HUB] boot.lua error: "..tostring(_e)) end '
+..'else warn("[JET HUB] boot.lua not readable") end end end'
 end
 end)
 end
