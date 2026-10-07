@@ -2190,7 +2190,12 @@ do
 -- ============================ PLAY TAB ============================
 local pPlay=Page("Play")
 local cSpeed=Card(pPlay,"Game Speed")
-Dropdown(cSpeed,"Speed",function() return {"1","1.50","2"} end,function() return Cfg.gs end,function(v)
+local speedOpts={"1.0","1.5","2.0","2.5","3.0","3.5","4.0","4.5","5.0"}
+Dropdown(cSpeed,"Speed",function() return speedOpts end,function()
+    local cur=tonumber(Cfg.gs)
+    for _,o in ipairs(speedOpts) do if cur and tonumber(o)==cur then return o end end
+    return tostring(Cfg.gs)
+end,function(v)
     set("gs",v)
     local n=tonumber(v)
     local g=ens("g","RemoteEvents","SetGameSpeed")
