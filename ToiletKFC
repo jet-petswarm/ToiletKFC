@@ -1480,10 +1480,17 @@ rec.l=tk
 pushAct({t="G",v=args[1],d=d},t0,t0,t0)
 end
 end
+local function callOld(old,self,...)
+-- never crash the game's namecalls: if the original is missing, call the method by name instead
+if type(old)=="function" then return old(self,...) end
+local mm=getnamecallmethod and getnamecallmethod() or ""
+if type(mm)=="string" and mm~="" then return self[mm](self,...) end
+error("namecall forward failed",0)
+end
 local function hookBody(old,self,...)
-if St.shut or not (rec.active or St.pick) then return old(self,...) end
+if St.shut or not (rec.active or St.pick) then return callOld(old,self,...) end
 local m=getnamecallmethod and getnamecallmethod() or ""
-if m~="InvokeServer" and m~="FireServer" then return old(self,...) end
+if m~="InvokeServer" and m~="FireServer" then return callOld(old,self,...) end
 local ok,kind=pcall(classify,self)
 if ok and kind then
 local args=table.pack(...)
@@ -1495,17 +1502,24 @@ rec.hits=rec.hits+1
 end)
 if setnamecallmethod then pcall(setnamecallmethod,m) end
 end
-return old(self,...)
+return callOld(old,self,...)
 end
 local HOOK_MODE,HOOK_OK="none",false
 do
-if type(hookmetamethod)=="function" and type(newcclosure)=="function" then
+if Cfg.nohook then
+HOOK_MODE="safe-mode (hook disabled)"
+elseif type(hookmetamethod)=="function" and type(newcclosure)=="function" then
 HOOK_MODE="hookmetamethod"
 HOOK_OK=pcall(function()
+local pre
+pcall(function() if getrawmetatable then pre=getrawmetatable(game).__namecall end end)
 local old
 old=hookmetamethod(game,"__namecall",newcclosure(function(self,...)
-return hookBody(old,self,...)
+return hookBody(old or pre,self,...)
 end))
+if type(old)~="function" then
+print("[JET HUB] hookmetamethod returned no original; using fallback forwarding")
+end
 end)
 elseif type(getrawmetatable)=="function" and type(setreadonly)=="function" and type(newcclosure)=="function" then
 HOOK_MODE="getrawmetatable"
@@ -2881,6 +2895,7 @@ Button(cUt,"Reconnect Now","p",function()
 N("Reconnecting...","warn")
 tryRejoin(true)
 end)
+Toggle(cUt,"Safe Mode (no hook)","Disable the namecall hook. Fixes 'attempt to call a nil value' spam. Re-execute after changing",Cfg.nohook==true,function(on) set("nohook",on) N("Re-execute the script to apply","warn") end)
 Toggle(cUt,"Error Explainer","Explain console errors in plain language (see F9 console)",Cfg.diag~=false,function(on) set("diag",on) end)
 Button(cUt,"Run Self-Test","p",function()
 local miss=DIAG.env(true)
