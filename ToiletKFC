@@ -2252,7 +2252,7 @@ Toggle(cTog,"Auto Lobby","Return to lobby automatically",Cfg.lb,function(on)
 set("lb",on)
 if on then startLB() else lbLoop=false end
 end)
-local MAPS={"City","Canyon","WildDesert","Camera Lab","ToiletBunker","Endless Mode"}
+local MAPS={"City","Canyon","WildDesert","Camera Lab","ToiletBunker","EndlessMode"}
 local MODES={"Easy","Medium","Hard","Insane","Crazy"}
 local MODE_KEY={Easy="Eazy",Medium="Medium",Hard="Hard",Insane="Insane",Crazy="Crazy"} -- the game spells it "Eazy"
 local function getJoinQueue()
