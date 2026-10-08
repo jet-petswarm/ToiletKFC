@@ -1,5 +1,5 @@
 -- ตรวจสอบ Whitelist และโหลด ToiletKFC (แบบตัดช่องว่างอัตโนมัติ)
-local MAIN_URL = "https://raw.githubusercontent.com/jet-petswarm/ToiletKFC/refs/heads/main/ToiletKFC"
+local MAIN_URL = "https://raw.githubusercontent.com/jet-petswarm/ToiletKFC/refs/heads/main/alliance"
 local player = game.Players.LocalPlayer
 
 -- รายชื่อผู้เล่นที่ได้รับอนุญาต
