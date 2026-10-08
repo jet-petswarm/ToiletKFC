@@ -1,8 +1,8 @@
--- ตรวจสอบ Whitelist และโหลด ToiletKFC
+-- ตรวจสอบ Whitelist และโหลด ToiletKFC (แบบตัดช่องว่างอัตโนมัติ)
 local MAIN_URL = "https://raw.githubusercontent.com/jet-petswarm/ToiletKFC/refs/heads/main/ToiletKFC"
 local player = game.Players.LocalPlayer
 
--- รายชื่อผู้เล่นที่ได้รับอนุญาต (ใส่รายชื่อ 10 คนแรกตรงนี้ได้เลย)
+-- รายชื่อผู้เล่นที่ได้รับอนุญาต
 local ALLOWED_PLAYERS = {
     "ripgodinder",
     "ชื่อผู้เล่นคนที่2",
@@ -16,17 +16,24 @@ local ALLOWED_PLAYERS = {
     "ชื่อผู้เล่นคนที่10"
 }
 
--- เช็กชื่อ
+-- ฟังก์ชันสำหรับตัดช่องว่างส่วนเกินออก
+local function cleanStr(str)
+    return tostring(str):match("^%s*(.-)%s*$")
+end
+
+-- เช็กชื่อ (เทียบแบบตัดช่องว่างทิ้งทั้งสองฝั่ง)
 local isAllowed = false
+local currentName = cleanStr(player.Name)
+
 for _, username in ipairs(ALLOWED_PLAYERS) do
-    if player.Name == username then
+    if currentName == cleanStr(username) then
         isAllowed = true
         break
     end
 end
 
 if not isAllowed then
-    player:Kick("[JET HUB] Access Denied: hahahaha")
+    player:Kick("You must ask permission from Head Jet first.")
     return
 end
 
