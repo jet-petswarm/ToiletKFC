@@ -105,7 +105,7 @@ local c=rj(CF)
 if type(c)=="table" then Cfg=c end
 end
 for k,v in pairs({
-gs="1",mn="",sel="",sk=false,rp=false,lb=false,rec=false,pl=false,
+gs="1",gsu=false,mn="",sel="",sk=false,rp=false,lb=false,rec=false,pl=false,
 s10=false,s1=false,s25=false,spn=false,afk=true,arc=true,oc=false,af=false,cm=true,
 nw=true,lang="en",qmap="City",qauto=false,vmode="Easy",vauto=false,
 crate="Free",acr=155,acg=120,acb=255,csrc="",uis=1,fpos=false,dm=false
@@ -1891,7 +1891,8 @@ if SK then pcall(function() SK:FireServer(a.v or 1) end) end
 X.setPhase("Wave skipped")
 elseif a.t=="G" then
 local SP=ens("g","RemoteEvents","SetGameSpeed")
-if SP then pcall(function() SP:FireServer(a.v) end) end
+local gv=(Cfg.gsu and tonumber(Cfg.gs)) or a.v
+if SP and gv then pcall(function() SP:FireServer(gv) end) end
 X.setPhase("Speed set")
 end
 end
@@ -2235,9 +2236,32 @@ for _,o in ipairs(speedOpts) do if cur and tonumber(o)==cur then return o end en
 return tostring(Cfg.gs)
 end,function(v)
 set("gs",v)
+set("gsu",true)
 local n=tonumber(v)
 local g=ens("g","RemoteEvents","SetGameSpeed")
 if n and g then pcall(function() g:FireServer(n) end) end
+end)
+-- Speed keeper: the server resets the speed every round, so the chosen speed is sent again at every round start
+-- (nothing is sent while recording, so the keeper never ends up inside a macro)
+local function applySpeed()
+if not Cfg.gsu or rec.active then return end
+local n=tonumber(Cfg.gs)
+local g=ens("g","RemoteEvents","SetGameSpeed")
+if n and g then pcall(function() g:FireServer(n) end) end
+end
+X.applySpeed=applySpeed
+task.spawn(function()
+local was=false
+while not St.shut do
+local now=false
+pcall(function() now=roundActive() end)
+if now and not was and Cfg.gsu then
+task.wait(1.5) applySpeed()
+task.wait(3) applySpeed()
+end
+was=now
+task.wait(1)
+end
 end)
 local cTog=Card(pPlay,"Round Automation")
 Toggle(cTog,"Auto Skip Wave","Skip waves automatically",Cfg.sk,function(on)
@@ -2820,9 +2844,8 @@ set("afk",on)
 applyAFK(on)
 end)
 local A={
-place=99703116573266,   -- map to rejoin (falls back to the place we were loaded in)
-home=game.PlaceId,
-sess=0, busy=false, conns={}, watch=0, useHome=false, failed=false,
+home=game.PlaceId,   -- rejoin the place we were running in (no fixed map)
+sess=0, busy=false, conns={}, watch=0, failed=false, tpAt=0,
 }
 local function arcClear()
 for _,c in ipairs(A.conns) do pcall(function() c:Disconnect() end) end
@@ -2868,6 +2891,8 @@ local function tryRejoin(force)
 if St.shut then return end
 if not force and not Cfg.arc then return end
 if A.busy and not force then return end
+-- a normal teleport (lobby -> match, replay ...) is not a disconnect: leave it alone unless an error prompt is up
+if not force and tick()-A.tpAt<20 and not arcIsDown() then return end
 A.sess=A.sess+1
 local my=A.sess
 A.busy=true
@@ -2876,15 +2901,15 @@ task.spawn(function()
 local TPS=game:GetService("TeleportService")
 arcQueueBoot()
 local tries=0
-while not St.shut and A.sess==my and (force or Cfg.arc) and tries<80 do
+while not St.shut and A.sess==my and (force or Cfg.arc) and tries<200 do
 tries=tries+1
-local pid=A.useHome and A.home or A.place
 A.failed=false
-local ok=pcall(function() TPS:Teleport(pid,PLR) end)
+local ok=pcall(function() TPS:Teleport(A.home,PLR) end)
+if not ok then ok=pcall(function() TPS:Teleport(A.home) end) end
 if not ok then A.failed=true end
 local t0=tick()
-while tick()-t0<10 and not St.shut and A.sess==my and not A.failed do task.wait(0.25) end
-if A.failed then A.useHome=not A.useHome task.wait(2) end   -- teleport rejected -> try the other place id
+while tick()-t0<8 and not St.shut and A.sess==my and not A.failed do task.wait(0.2) end
+if A.failed then task.wait(math.min(1+tries*0.5,5)) end   -- teleport rejected / flooded -> short back-off, then try again
 end
 if A.sess==my then A.busy=false end
 end)
@@ -2893,23 +2918,31 @@ function armReconnect()
 arcClear()
 if St.shut or not Cfg.arc then return end
 local my=A.watch
-pcall(function()
-A.conns[#A.conns+1]=ac(game:GetService("TeleportService").TeleportInitFailed:Connect(function() A.failed=true end))
+local function hook(sig,fn)
+pcall(function() A.conns[#A.conns+1]=ac(sig:Connect(fn)) end)
+end
+local TPS=game:GetService("TeleportService")
+hook(TPS.TeleportInitFailed,function() A.failed=true end)
+hook(PLR.OnTeleport,function(st)
+if st==Enum.TeleportState.Failed then A.failed=true A.tpAt=0
+else A.tpAt=tick() end
 end)
-pcall(function()
-A.conns[#A.conns+1]=ac(game:GetService("NetworkClient").ChildRemoved:Connect(function() tryRejoin(false) end))
-end)
+-- every kind of disconnect / kick / ban / shutdown / "connection lost" ends up in one of these:
+hook(game:GetService("NetworkClient").ChildRemoved,function() task.defer(tryRejoin,false) end)
+hook(game:GetService("GuiService").ErrorMessageChanged,function() if arcIsDown() then tryRejoin(false) end end)
+hook(PLR.AncestryChanged,function(_,p) if p==nil then tryRejoin(false) end end)
 task.spawn(function()
-local ok,gui=pcall(function() return game:GetService("CoreGui"):WaitForChild("RobloxPromptGui",15) end)
+local ok,gui=pcall(function() return game:GetService("CoreGui"):WaitForChild("RobloxPromptGui",30) end)
 if not ok or not gui or St.shut or A.watch~=my then return end
 A.conns[#A.conns+1]=ac(gui.DescendantAdded:Connect(function(d)
 if d.Name=="ErrorPrompt" then tryRejoin(false) end
 end))
 end)
+-- safety net, checked twice a second
 task.spawn(function()
 while not St.shut and A.watch==my and Cfg.arc do
-if not A.busy and arcIsDown() then tryRejoin(false) end
-task.wait(1.5)
+if not A.busy and (arcIsDown() or PLR.Parent==nil) then tryRejoin(false) end
+task.wait(0.5)
 end
 end)
 end
@@ -2959,11 +2992,7 @@ applyTheme(K.ac,true)
 syncSwatches()
 JH.detect()
 JH.lastDetect=tick()
-local gs=tonumber(Cfg.gs)
-if gs then
-local g=ens("g","RemoteEvents","SetGameSpeed")
-if g then pcall(function() g:FireServer(gs) end) end
-end
+if Cfg.gsu and X.applySpeed then X.applySpeed() end
 if Cfg.sk then lastW=nil setVis(true) end
 if Cfg.rp then startRP() end
 if Cfg.lb then startLB() end
