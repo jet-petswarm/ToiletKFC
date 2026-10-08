@@ -5,7 +5,7 @@ local player = game.Players.LocalPlayer
 -- รายชื่อผู้เล่นที่ได้รับอนุญาต
 local ALLOWED_PLAYERS = {
     "ripgodinder",
-    "ชื่อผู้เล่นคนที่2",
+    "kaitun_jet03alliance",
     "ชื่อผู้เล่นคนที่3",
     "ชื่อผู้เล่นคนที่4",
     "ชื่อผู้เล่นคนที่5",
