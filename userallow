@@ -1,1 +1,45 @@
+-- ตรวจสอบ Whitelist และโหลด ToiletKFC
+local MAIN_URL = "https://raw.githubusercontent.com/jet-petswarm/ToiletKFC/refs/heads/main/ToiletKFC"
+local player = game.Players.LocalPlayer
 
+-- รายชื่อผู้เล่นที่ได้รับอนุญาต (ใส่รายชื่อ 10 คนแรกตรงนี้ได้เลย)
+local ALLOWED_PLAYERS = {
+    "ripgodinder",
+    "ชื่อผู้เล่นคนที่2",
+    "ชื่อผู้เล่นคนที่3",
+    "ชื่อผู้เล่นคนที่4",
+    "ชื่อผู้เล่นคนที่5",
+    "ชื่อผู้เล่นคนที่6",
+    "ชื่อผู้เล่นคนที่7",
+    "ชื่อผู้เล่นคนที่8",
+    "ชื่อผู้เล่นคนที่9",
+    "ชื่อผู้เล่นคนที่10"
+}
+
+-- เช็กชื่อ
+local isAllowed = false
+for _, username in ipairs(ALLOWED_PLAYERS) do
+    if player.Name == username then
+        isAllowed = true
+        break
+    end
+end
+
+if not isAllowed then
+    player:Kick("[JET HUB] Access Denied: คุณไม่มีสิทธิ์ใช้งานสคริปต์นี้")
+    return
+end
+
+-- ถ้าผ่านการตรวจสอบ จะโหลดและรันสคริปต์จาก ToiletKFC ทันที
+local ls = loadstring or load
+local ok, src = pcall(function() return game:HttpGet(MAIN_URL) end)
+if ok and type(src) == "string" then
+    local f, err = ls(src, "ToiletKFC")
+    if f then
+        f()
+    else
+        warn("[JET HUB] Main script compile error: " .. tostring(err))
+    end
+else
+    warn("[JET HUB] Failed to download ToiletKFC script.")
+end
