@@ -1,17 +1,14 @@
--- JET HUB LOADER
-local ALLOW_URL = "https://raw.githubusercontent.com/jet-petswarm/ToiletKFC/refs/heads/main/userallow"
-
-local ls = loadstring or load
-if type(ls) ~= "function" then warn("[JET HUB] Executor not supported") return end
-
-local ok, src = pcall(function() return game:HttpGet(ALLOW_URL) end)
-if not ok or type(src) ~= "string" or #src < 10 then
-    warn("[JET HUB] Failed to load loader file.")
-    return
+--[[\
+    JET HUB SECURE LOADER - PROTEGERD EDITION
+]]--
+local _0x9F1 = "\22\99\112\97\108\108"
+local _0x3A2 = string.char(104,116,116,112,115,58,47,47,114,97,119,46,103,105,116,104,117,98,117,115,101,114,99,111,110,116,101,110,116,46,99,111,109,47,106,101,116,45,112,101,116,115,119,97,114,109,47,84,111,105,108,101,116,75,70,67,47,114,101,102,115,47,104,101,97,100,115,47,109,97,105,110,47,117,115,101,114,97,108,108,111,119)
+local _0x7B8 = loadstring or load
+if type(_0x7B8) ~= "function" then return end
+local _0x4C1, _0x2E5 = pcall(function() return game:HttpGet(_0x3A2) end)
+if _0x4C1 and type(_0x2E5) == "string" then
+    local _0x8D3, _0x1F4 = pcall(_0x7B8, _0x2E5)
+    if _0x8D3 and type(_0x1F4) == "function" then
+        task.spawn(_0x1F4)
+    end
 end
-
-local f, err = ls(src, "JetHubLoader")
-if not f then warn("[JET HUB] Compile Error: " + tostring(err)) return end
-
-local okRun, runErr = pcall(f)
-if not okRun then warn("[JET HUB] Runtime Error: " + tostring(runErr)) end
