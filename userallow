@@ -26,7 +26,7 @@ for _, username in ipairs(ALLOWED_PLAYERS) do
 end
 
 if not isAllowed then
-    player:Kick("[JET HUB] Access Denied: คุณไม่มีสิทธิ์ใช้งานสคริปต์นี้")
+    player:Kick("[JET HUB] Access Denied: hahahaha")
     return
 end
 
