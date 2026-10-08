@@ -1,21 +1,17 @@
--- JET HUB FULL - loads the hub straight from GitHub (no file needed in workspace)
-local URL = "https://raw.githubusercontent.com/jet-petswarm/ToiletKFC/refs/heads/main/ToiletKFC"
- 
--- Auto Reconnect re-runs this same loader after every rejoin (no boot.lua needed)
-pcall(function()
-    getgenv().JetHubBoot = 'local _ls=loadstring or load local _ok,_s=pcall(function() return game:HttpGet("' .. URL .. '") end) '
-        .. 'if _ok and type(_s)=="string" and #_s>1000 then local _f,_e=_ls(_s,"JetHub") if _f then _f() else warn("[JET HUB] "..tostring(_e)) end '
-        .. 'else warn("[JET HUB] download failed") end'
-end)
- 
+-- JET HUB LOADER
+local ALLOW_URL = "https://raw.githubusercontent.com/jet-petswarm/ToiletKFC/refs/heads/main/userallow"
+
 local ls = loadstring or load
-if type(ls) ~= "function" then warn("[JET HUB] this executor has no loadstring") return end
- 
-local ok, src = pcall(function() return game:HttpGet(URL) end)
-if not ok or type(src) ~= "string" or #src < 1000 then
-    warn("[JET HUB] download failed: " .. tostring(src)) return
+if type(ls) ~= "function" then warn("[JET HUB] Executor not supported") return end
+
+local ok, src = pcall(function() return game:HttpGet(ALLOW_URL) end)
+if not ok or type(src) ~= "string" or #src < 10 then
+    warn("[JET HUB] Failed to load loader file.")
+    return
 end
-local f, err = ls(src, "JetHub")
-if not f then warn("[JET HUB] COMPILE ERROR: " .. tostring(err)) return end
-local ok2, e = pcall(f)
-if not ok2 then warn("[JET HUB] RUNTIME ERROR: " .. tostring(e)) end
+
+local f, err = ls(src, "JetHubLoader")
+if not f then warn("[JET HUB] Compile Error: " + tostring(err)) return end
+
+local okRun, runErr = pcall(f)
+if not okRun then warn("[JET HUB] Runtime Error: " + tostring(runErr)) end
