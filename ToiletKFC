@@ -2228,7 +2228,7 @@ end
 do
 local pPlay=Page("Play")
 local cSpeed=Card(pPlay,"Game Speed")
-local speedOpts={"1.0","1.5","2.0","2.5","3.0","3.5","4.0","4.5","5.0"}
+local speedOpts={"1.0","1.5","2.0","3.0","3.5","4.0","4.5","5.0"}
 Dropdown(cSpeed,"Speed",function() return speedOpts end,function()
 local cur=tonumber(Cfg.gs)
 for _,o in ipairs(speedOpts) do if cur and tonumber(o)==cur then return o end end
@@ -2252,7 +2252,7 @@ Toggle(cTog,"Auto Lobby","Return to lobby automatically",Cfg.lb,function(on)
 set("lb",on)
 if on then startLB() else lbLoop=false end
 end)
-local MAPS={"City","Canyon","WildDesert","Camera Lab","ToiletBunker","EndlessMode"}
+local MAPS={"City","Canyon","WildDesert","Camera Lab","ToiletBunker","Endless Mode"}
 local MODES={"Easy","Medium","Hard","Insane","Crazy"}
 local MODE_KEY={Easy="Eazy",Medium="Medium",Hard="Hard",Insane="Insane",Crazy="Crazy"} -- the game spells it "Eazy"
 local function getJoinQueue()
@@ -2271,6 +2271,33 @@ local rf=getJoinQueue()
 if not rf then
 if not silent then N("JoinQueue remote not found","bad") end
 return false
+end
+if name=="Endless Mode" then
+-- the game may register this map under a different key: scan for it, then try every spelling and log what the server answers
+task.spawn(function()
+local cand,seen={},{}
+local function add(n) if type(n)=="string" and n~="" and not seen[n] then seen[n]=true cand[#cand+1]=n end end
+pcall(function()
+for _,root in ipairs({RS,workspace}) do
+for _,d in ipairs(root:GetDescendants()) do
+if d.Name:lower():find("endless",1,true) and #d.Name<40 and not d:IsA("Sound") then add(d.Name) end
+end
+end
+end)
+add("Endless Mode") add("EndlessMode") add("Endless") add("Endless_Mode") add("endless")
+for i,n in ipairs(cand) do
+if St.shut then return end
+local ok,res=pcall(function() return rf:InvokeServer(n,1) end)
+print("[JET HUB] JoinQueue('"..n.."') ->",ok,res)
+if ok and res~=nil and res~=false then
+if not silent then N("Joined queue: "..n,"ok") end
+return
+end
+task.wait(0.6)
+end
+if not silent then N("Endless Mode: server refused every name (see F9 console)","bad") end
+end)
+return true
 end
 task.spawn(function() pcall(function() rf:InvokeServer(name,1) end) end)
 if not silent then N("Joining queue: "..name,"ok") end
