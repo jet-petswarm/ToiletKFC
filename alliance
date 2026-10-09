@@ -105,7 +105,7 @@ local c=rj(CF)
 if type(c)=="table" then Cfg=c end
 end
 for k,v in pairs({
-gs="1",gsu=false,mn="",sel="",sk=false,rp=false,lb=false,rec=false,pl=false,
+gs="1",mn="",sel="",sk=false,rp=false,lb=false,rec=false,pl=false,
 s10=false,s1=false,s25=false,spn=false,afk=true,arc=true,oc=false,af=false,cm=true,
 nw=true,lang="en",qmap="City",qauto=false,vmode="Easy",vauto=false,
 crate="Free",acr=155,acg=120,acb=255,csrc="",uis=1,fpos=false,dm=false
@@ -1891,7 +1891,7 @@ if SK then pcall(function() SK:FireServer(a.v or 1) end) end
 X.setPhase("Wave skipped")
 elseif a.t=="G" then
 local SP=ens("g","RemoteEvents","SetGameSpeed")
-local gv=(Cfg.gsu and tonumber(Cfg.gs)) or a.v
+local gv=(X.wantSpeed and X.wantSpeed()) or a.v
 if SP and gv then pcall(function() SP:FireServer(gv) end) end
 X.setPhase("Speed set")
 end
@@ -2237,30 +2237,52 @@ return tostring(Cfg.gs)
 end,function(v)
 set("gs",v)
 set("gsu",true)
-local n=tonumber(v)
-local g=ens("g","RemoteEvents","SetGameSpeed")
-if n and g then pcall(function() g:FireServer(n) end) end
+if X.markSpeed then X.markSpeed(0) end
 end)
--- Speed keeper: the server resets the speed every round, so the chosen speed is sent again at every round start
--- (nothing is sent while recording, so the keeper never ends up inside a macro)
-local function applySpeed()
-if not Cfg.gsu or rec.active then return end
+-- Speed enforcer: keeps the chosen speed on, even when the server resets it or a send gets lost.
+--  * it only sends when a speed is wanted and nothing is being recorded (so it never lands inside a macro)
+--  * if the remote is not loaded yet it keeps retrying instead of giving up
+--  * every trigger (new round, recording stopped, dropdown pick, start) sends 3 times (now, ~2s, ~6s)
+--  * and the speed is re-sent every 5s, so a silent reset in the middle of a round is fixed too
+local SPD={q={},last=0,lastRound=false,lastRec=false}
+local function wantSpeed()
 local n=tonumber(Cfg.gs)
-local g=ens("g","RemoteEvents","SetGameSpeed")
-if n and g then pcall(function() g:FireServer(n) end) end
+if not n or n<=0 then return nil end
+if Cfg.gsu==true then return n end
+if Cfg.gsu==nil and n~=1 then return n end   -- speed saved by an older version
+return nil
 end
-X.applySpeed=applySpeed
+X.wantSpeed=wantSpeed
+function X.markSpeed(d)
+local t=tick()+(d or 0.5)
+SPD.q={t,t+2,t+5.5}
+end
+local function sendSpeed()
+local n=wantSpeed()
+if not n then return true end
+local g=ens("g","RemoteEvents","SetGameSpeed")
+if not g then return false end
+local ok=pcall(function() g:FireServer(n) end)
+if ok then SPD.last=tick() end
+return ok
+end
+X.markSpeed(1.5)
 task.spawn(function()
-local was=false
 while not St.shut do
 local now=false
 pcall(function() now=roundActive() end)
-if now and not was and Cfg.gsu then
-task.wait(1.5) applySpeed()
-task.wait(3) applySpeed()
+local recNow=rec.active==true
+if (now and not SPD.lastRound) or (SPD.lastRec and not recNow) then X.markSpeed(0.5) end
+SPD.lastRound=now
+SPD.lastRec=recNow
+if not recNow and wantSpeed() then
+local t=tick()
+if #SPD.q==0 and t-SPD.last>5 then SPD.q={t} end
+if #SPD.q>0 and t>=SPD.q[1] then
+if sendSpeed() then table.remove(SPD.q,1) else X.markSpeed(0.5) end   -- remote missing -> retry every 0.5s, keep the spacing once it appears
 end
-was=now
-task.wait(1)
+end
+task.wait(0.5)
 end
 end)
 local cTog=Card(pPlay,"Round Automation")
@@ -2992,7 +3014,7 @@ applyTheme(K.ac,true)
 syncSwatches()
 JH.detect()
 JH.lastDetect=tick()
-if Cfg.gsu and X.applySpeed then X.applySpeed() end
+if X.markSpeed then X.markSpeed(0.5) end
 if Cfg.sk then lastW=nil setVis(true) end
 if Cfg.rp then startRP() end
 if Cfg.lb then startLB() end
